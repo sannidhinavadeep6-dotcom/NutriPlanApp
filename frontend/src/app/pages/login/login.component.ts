@@ -152,23 +152,6 @@ interface Slide {
             }
           </button>
         </form>
-
-        <!-- Quick Demo Account Fill -->
-        <div class="demo-accounts-card">
-          <div class="demo-header">Quick Test Credentials</div>
-          <div class="demo-row">
-            <span class="demo-label">Admin:</span>
-            <button type="button" class="demo-pill-btn" (click)="fillDemo('admin')">
-              <code>admin&#64;nutriplan.app</code>
-            </button>
-          </div>
-          <div class="demo-row">
-            <span class="demo-label">Demo:</span>
-            <button type="button" class="demo-pill-btn" (click)="fillDemo('demo')">
-              <code>demo&#64;nutriplan.app</code>
-            </button>
-          </div>
-        </div>
       } @else {
         <form (ngSubmit)="doRegister()" class="auth-form">
           <label class="form-field">
