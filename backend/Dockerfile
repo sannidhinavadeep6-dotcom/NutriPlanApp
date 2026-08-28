@@ -1,7 +1,7 @@
-# Production 24/7 Dockerfile for NutriPlan (Root Context)
+# Production 24/7 Dockerfile for NutriPlan (Backend-Context)
 FROM python:3.11-slim
 
-WORKDIR /app
+WORKDIR /app/backend
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -9,14 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependencies
-COPY requirements.txt ./
-COPY backend/requirements.txt ./backend/
-RUN pip install --no-cache-dir -r backend/requirements.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all application files
+# Copy backend files (including static pre-built web files)
 COPY . .
-
-WORKDIR /app/backend
 
 EXPOSE 8000
 ENV PORT=8000

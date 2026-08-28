@@ -1,0 +1,13 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+frontend/node_modules
+frontend/.angular
+frontend/dist
+frontend/android
+frontend/ios
+cloudflared.exe
+*.bat
+*.vbs
