@@ -102,7 +102,7 @@ interface Slide {
           class="seg-btn"
           [class.on]="mode === 'register'" 
           (click)="setMode('register')">
-          <app-icon name="user-plus" [size]="14"/> Request access
+          <app-icon name="user-plus" [size]="14"/> Create account
         </button>
       </div>
 
@@ -198,10 +198,10 @@ interface Slide {
 
           <button class="btn-submit" type="submit" [disabled]="busy">
             @if (busy) { 
-              <span class="spin"><app-icon name="refresh" [size]="17"/></span> Sending… 
+              <span class="spin"><app-icon name="refresh" [size]="17"/></span> Creating account… 
             } @else { 
-              <app-icon name="mail" [size]="17"/> 
-              <span>Send request to admin</span>
+              <span>Create account &amp; Sign in</span>
+              <app-icon name="arrow-right" [size]="18"/> 
             }
           </button>
         </form>
@@ -468,9 +468,8 @@ export class LoginComponent implements OnInit, OnDestroy {
     this.busy = true;
     this.auth.register(this.regName.trim(), this.regEmail.trim(), this.regPassword).subscribe({
       next: res => {
-        this.busy = false;
-        this.okMsg = '✓ ' + res.message;
-        this.regName = this.regEmail = this.regPassword = '';
+        const dest = res.user.role === 'admin' ? ['/admin'] : ['/today'];
+        this.router.navigate(dest);
       },
       error: (e: HttpErrorResponse) => {
         this.busy = false;

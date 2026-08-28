@@ -18,7 +18,7 @@ class User(db.Model):
     name = db.Column(db.String(120), nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), nullable=False, default="user")       # admin | user
-    status = db.Column(db.String(20), nullable=False, default="pending")  # pending | active | disabled
+    status = db.Column(db.String(20), nullable=False, default="active")   # active | pending | disabled
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
     plan_entries = db.relationship("PlanEntry", backref="user", cascade="all, delete-orphan")

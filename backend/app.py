@@ -303,11 +303,17 @@ def auth_register():
         return bad("Password must be at least 6 characters")
     if User.query.filter(db.func.lower(User.email) == email).first():
         return bad("An account with this email already exists")
-    db.session.add(User(email=email, name=name,
-                        password_hash=generate_password_hash(password),
-                        role="user", status="pending"))
+    user = User(email=email, name=name,
+                password_hash=generate_password_hash(password),
+                role="user", status="active")
+    db.session.add(user)
     db.session.commit()
-    return jsonify({"message": "Request received. An administrator will approve your account — then you can log in."}), 201
+    token = make_token(user)
+    resp = make_response(jsonify({"token": token, "user": user.to_dict(), "message": "Account created successfully"}))
+    resp.set_cookie("np_token", token, max_age=JWT_TTL_HOURS * 3600,
+                    samesite="Lax", httponly=False, path="/")
+    return resp, 201
+
 
 
 @app.route("/api/auth/login", methods=["POST"])

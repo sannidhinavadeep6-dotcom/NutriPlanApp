@@ -44,8 +44,10 @@ export class AuthService {
     );
   }
 
-  register(name: string, email: string, password: string): Observable<{ message: string }> {
-    return this.api.post<{ message: string }>('/auth/register', { name, email, password });
+  register(name: string, email: string, password: string): Observable<LoginResponse> {
+    return this.api.post<LoginResponse>('/auth/register', { name, email, password }).pipe(
+      tap(res => this.applySession(res)),
+    );
   }
 
   private applySession(res: LoginResponse): void {
