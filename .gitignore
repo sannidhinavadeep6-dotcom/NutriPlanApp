@@ -30,8 +30,6 @@ frontend/ios/App/Pods/
 frontend/ios/App/build/
 frontend/ios/App/DerivedData/
 
-# IDE & OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+# Binaries & Tunnels
+cloudflared.exe
+

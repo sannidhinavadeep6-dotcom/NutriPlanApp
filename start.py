@@ -12,7 +12,9 @@ It will:
   4. start the server and open your browser at the right address
 """
 
+import atexit
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -157,6 +159,44 @@ def pick_port():
     sys.exit(1)
 
 
+def get_local_ip():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+
+
+def start_public_tunnel(port):
+    cf_path = os.path.join(ROOT, "cloudflared.exe")
+    if not os.path.isfile(cf_path):
+        return None
+    try:
+        proc = subprocess.Popen(
+            [cf_path, "tunnel", "--url", "http://127.0.0.1:%d" % port],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        atexit.register(lambda: proc.terminate() if proc.poll() is None else None)
+        
+        tunnel_url = None
+        start_t = time.time()
+        while time.time() - start_t < 15:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            m = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", line)
+            if m:
+                tunnel_url = m.group(0)
+                break
+        return tunnel_url
+    except Exception:
+        return None
+
+
 def open_browser_later(url):
     def _open():
         time.sleep(1.2)
@@ -175,6 +215,10 @@ def main():
 
     ensure_deps()
     port = pick_port()
+    local_ip = get_local_ip()
+
+    print("\n  Starting Worldwide Public Tunnel...")
+    public_url = start_public_tunnel(port)
 
     os.chdir(BACKEND)
     sys.path.insert(0, BACKEND)
@@ -182,13 +226,18 @@ def main():
 
     url = "http://localhost:%d" % port
     print()
-    print("=" * 58)
-    print("  NutriPlan 24/7 Server is active  ->  %s" % url)
-    print()
-    print("  Admin login : admin@nutriplan.app  /  Admin@123")
-    print("  User login  : demo@nutriplan.app  /  Demo@123")
+    print("=" * 64)
+    print("  🥗 NutriPlan 24/7 Server is ACTIVE!")
+    print("=" * 64)
+    print("  💻 This Computer  : %s" % url)
+    print("  🏠 Same Wi-Fi     : http://%s:%d" % (local_ip, port))
+    if public_url:
+        print("  🌍 ANY OTHER WI-FI: %s" % public_url)
+        print("     (Works on 4G / 5G / Any Wi-Fi worldwide!)")
+    print("-" * 64)
+    print("  Admin login       : admin@nutriplan.app  /  Admin@123")
     print("  (running continuously 24/7 — Ctrl+C to stop)")
-    print("=" * 58)
+    print("=" * 64)
     print()
 
     if "--no-browser" not in sys.argv and "--background" not in sys.argv:
@@ -196,10 +245,11 @@ def main():
 
     try:
         from waitress import serve
-        print("  Serving with high-concurrency multi-threaded WSGI engine (Waitress)...")
+        print("  Serving with multi-threaded WSGI engine (Waitress)...")
         serve(app, host="0.0.0.0", port=port, threads=8, channel_timeout=120)
     except ImportError:
         app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 if __name__ == "__main__":
