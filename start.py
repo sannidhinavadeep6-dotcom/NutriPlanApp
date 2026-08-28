@@ -227,16 +227,16 @@ def main():
     url = "http://localhost:%d" % port
     print()
     print("=" * 64)
-    print("  🥗 NutriPlan 24/7 Server is ACTIVE!")
+    print("  [NutriPlan] 24/7 Server is ACTIVE!")
     print("=" * 64)
-    print("  💻 This Computer  : %s" % url)
-    print("  🏠 Same Wi-Fi     : http://%s:%d" % (local_ip, port))
+    print("  [PC Browser]      : %s" % url)
+    print("  [Same Wi-Fi]      : http://%s:%d" % (local_ip, port))
     if public_url:
-        print("  🌍 ANY OTHER WI-FI: %s" % public_url)
+        print("  [ANY OTHER WI-FI] : %s" % public_url)
         print("     (Works on 4G / 5G / Any Wi-Fi worldwide!)")
     print("-" * 64)
     print("  Admin login       : admin@nutriplan.app  /  Admin@123")
-    print("  (running continuously 24/7 — Ctrl+C to stop)")
+    print("  (running continuously 24/7 -- Ctrl+C to stop)")
     print("=" * 64)
     print()
 
