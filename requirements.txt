@@ -1,3 +1,7 @@
-# Root shortcut: lets `pip install -r requirements.txt` work from the project root.
-# Actual dependencies live in backend/requirements.txt
--r backend/requirements.txt
+flask>=3.0
+flask-cors>=4.0
+flask-sqlalchemy>=3.1
+pyjwt>=2.8
+werkzeug>=3.0
+waitress>=3.0
+
