@@ -1,5 +1,7 @@
 # 🥗 NutriPlan — Full-Stack Edition
 
+Public Link:https://nutriplanapp.onrender.com/login
+
 **Angular frontend · Python (Flask) backend · SQLite (SQL) database · JWT login · Admin portal with user approval**
 
 A recipe planner & calorie analyzer where **access is controlled by an administrator**: new users request access on the login page, an admin approves them from the Admin Portal, and only then can they sign in.
