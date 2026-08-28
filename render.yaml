@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: nutriplan-app
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "python start.py --no-browser"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
