@@ -120,11 +120,14 @@ def free_port(port):
         print("  Process ID(s) using it: %s" % ", ".join(sorted(pids)))
 
     answer = ""
-    try:
-        answer = input("  Stop the old app so NutriPlan can use port %d? [Y/n] "
-                       % port).strip().lower()
-    except EOFError:
-        answer = "y"  # non-interactive: just do it
+    if not sys.stdin.isatty() or "-y" in sys.argv or "--yes" in sys.argv:
+        answer = "y"
+    else:
+        try:
+            answer = input("  Stop the old app so NutriPlan can use port %d? [Y/n] "
+                           % port).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = "y"
 
     if answer in ("", "y", "yes"):
         for pid in sorted(pids):
@@ -133,7 +136,7 @@ def free_port(port):
         for _ in range(20):
             time.sleep(0.5)
             if not port_in_use(port):
-                print("  Port %d is free now ✓" % port)
+                print("  Port %d is free now [OK]" % port)
                 return True
         # maybe the listener died but TIME_WAIT lingers — re-check pids
         if not pids_on_port(port) and not port_in_use(port):
