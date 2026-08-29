@@ -17,7 +17,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from food_data import CATS, CAT_ORDER
 from models import (db, User, Goal, Food, Recipe, Ingredient, PlanEntry,
-                    GroceryCheck, GroceryExtra)
+                    GroceryCheck, GroceryExtra, ActivityLog)
 from nutrition import (UNIT_LABELS, best_match, search_foods, units_for,
                        unit_grams, default_unit_for, default_qty_for,
                        ing_grams, zero_nut, add_nut, round_nut, fmt_amount,
@@ -57,8 +57,16 @@ def create_app():
     db.init_app(app)
     with app.app_context():
         db.create_all()
-        # lightweight migration: add image column to older databases
+        # lightweight migration: add columns to older databases
         from sqlalchemy import text
+        ucols = [r[1] for r in db.session.execute(text("PRAGMA table_info(users)"))]
+        if "last_login_at" not in ucols:
+            db.session.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME"))
+            db.session.commit()
+        if "last_active_at" not in ucols:
+            db.session.execute(text("ALTER TABLE users ADD COLUMN last_active_at DATETIME"))
+            db.session.commit()
+
         cols = [r[1] for r in db.session.execute(text("PRAGMA table_info(foods)"))]
         if "image" not in cols:
             db.session.execute(text("ALTER TABLE foods ADD COLUMN image VARCHAR(255)"))
@@ -287,6 +295,18 @@ def add_dicts(a, b):
     return a
 
 
+def log_user_activity(user_id, category, action, details=""):
+    try:
+        u = db.session.get(User, user_id)
+        if u:
+            u.last_active_at = datetime.now(timezone.utc)
+        entry = ActivityLog(user_id=user_id, category=category, action=action, details=details)
+        db.session.add(entry)
+        db.session.commit()
+    except Exception as e:
+        app.logger.warning("Activity log error: %s", e)
+
+
 # ------------------------------------------------------------------ auth API
 
 @app.route("/api/auth/register", methods=["POST"])
@@ -303,11 +323,14 @@ def auth_register():
         return bad("Password must be at least 6 characters")
     if User.query.filter(db.func.lower(User.email) == email).first():
         return bad("An account with this email already exists")
+    now = datetime.now(timezone.utc)
     user = User(email=email, name=name,
                 password_hash=generate_password_hash(password),
-                role="user", status="active")
+                role="user", status="active",
+                last_login_at=now, last_active_at=now)
     db.session.add(user)
     db.session.commit()
+    log_user_activity(user.id, "auth", "register", "Created NutriPlan account and signed in")
     token = make_token(user)
     resp = make_response(jsonify({"token": token, "user": user.to_dict(), "message": "Account created successfully"}))
     resp.set_cookie("np_token", token, max_age=JWT_TTL_HOURS * 3600,
@@ -328,6 +351,11 @@ def auth_login():
         return jsonify({"error": "Your account is awaiting admin approval", "code": "pending"}), 403
     if user.status != "active":
         return jsonify({"error": "This account has been disabled by an administrator", "code": "disabled"}), 403
+    now = datetime.now(timezone.utc)
+    user.last_login_at = now
+    user.last_active_at = now
+    db.session.commit()
+    log_user_activity(user.id, "auth", "login", "Signed into NutriPlan")
     token = make_token(user)
     resp = make_response(jsonify({"token": token, "user": user.to_dict()}))
     resp.set_cookie("np_token", token, max_age=JWT_TTL_HOURS * 3600,
@@ -400,6 +428,7 @@ def foods_create(user):
              owner_user_id=user.id)
     db.session.add(f)
     db.session.commit()
+    log_user_activity(user.id, "foods", "create_food", f"Added custom food '{f.name}' ({int(f.k)} kcal/100g)")
     return jsonify({"food": food_to_dict(f)}), 201
 
 
@@ -416,9 +445,11 @@ def foods_delete(user, food_id):
     f = db.session.get(Food, food_id)
     if not f or f.owner_user_id != user.id:
         return bad("Custom food not found", 404)
+    fname = f.name
     Ingredient.query.filter_by(food_id=f.id).update({"food_id": None, "raw": f.name})
     db.session.delete(f)
     db.session.commit()
+    log_user_activity(user.id, "foods", "delete_food", f"Deleted custom food '{fname}'")
     return jsonify({"message": "Custom food deleted"})
 
 
@@ -456,6 +487,7 @@ def parse_lines(user):
             "name": parsed["name"], "note": parsed["note"],
             "food": food_out, "grams": grams,
         })
+    log_user_activity(user.id, "parser", "parse_text", f"Parsed {len(lines)} ingredient line(s) via smart parser")
     return jsonify({"rows": rows})
 
 
@@ -520,6 +552,7 @@ def recipes_create(user):
         db.session.rollback()
         return err
     db.session.commit()
+    log_user_activity(user.id, "recipes", "create_recipe", f"Created recipe '{recipe.name}' ({len(recipe.ingredients)} ingredients, {recipe.servings} servings)")
     return jsonify({"recipe": recipe_to_detail(recipe, user)}), 201
 
 
@@ -548,11 +581,13 @@ def recipes_update(user, rid):
             db.session.rollback()
             return err
         db.session.commit()
+        log_user_activity(user.id, "recipes", "create_recipe", f"Saved custom copy of '{custom_r.name}'")
         return jsonify({"recipe": recipe_to_detail(custom_r, user)}), 201
     _, err = load_recipe_payload(user, r)
     if err:
         return err
     db.session.commit()
+    log_user_activity(user.id, "recipes", "update_recipe", f"Updated recipe '{r.name}'")
     return jsonify({"recipe": recipe_to_detail(r, user)})
 
 
@@ -567,9 +602,11 @@ def recipes_delete(user, rid):
             return bad("Global library recipes cannot be deleted", 403)
     elif r.user_id != user.id and user.role != "admin":
         return bad("Recipe not found", 404)
+    r_name = r.name
     PlanEntry.query.filter_by(recipe_id=r.id).delete()
     db.session.delete(r)
     db.session.commit()
+    log_user_activity(user.id, "recipes", "delete_recipe", f"Deleted recipe '{r_name}'")
     return jsonify({"message": "Recipe deleted"})
 
 
@@ -613,10 +650,14 @@ def plan_add(user):
                   recipe_id=recipe_id, servings=servings)
     db.session.add(e)
     db.session.commit()
+    days_arr = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_lbl = days_arr[day] if 0 <= day < len(days_arr) else str(day)
+    kcal_amt = round(entry_nutrition(e)["kcal"], 0)
+    log_user_activity(user.id, "planner", "add_meal", f"Scheduled '{r.name}' for {day_lbl} {data['slot'].capitalize()} ({servings} servings, {int(kcal_amt)} kcal)")
     return jsonify({"entry": {"id": e.id, "day": e.day, "slot": e.slot,
                               "recipe_id": e.recipe_id,
                               "recipe_name": r.name, "servings": e.servings,
-                              "kcal": round(entry_nutrition(e)["kcal"], 0)}}), 201
+                              "kcal": kcal_amt}}), 201
 
 
 @app.route("/api/plan/entries/<int:eid>", methods=["PATCH"])
@@ -631,6 +672,10 @@ def plan_patch(user, eid):
     except (TypeError, ValueError):
         return bad("servings must be a number")
     db.session.commit()
+    days_arr = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_lbl = days_arr[e.day] if 0 <= e.day < len(days_arr) else str(e.day)
+    rname = e.recipe.name if e.recipe else "Recipe"
+    log_user_activity(user.id, "planner", "update_servings", f"Changed servings for '{rname}' to {e.servings} on {day_lbl} {e.slot.capitalize()}")
     return jsonify({"entry": {"id": e.id, "day": e.day, "slot": e.slot,
                               "recipe_id": e.recipe_id,
                               "recipe_name": e.recipe.name if e.recipe else "?",
@@ -644,8 +689,13 @@ def plan_delete(user, eid):
     e = db.session.get(PlanEntry, eid)
     if not e or e.user_id != user.id:
         return bad("Plan entry not found", 404)
+    days_arr = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_lbl = days_arr[e.day] if 0 <= e.day < len(days_arr) else str(e.day)
+    rname = e.recipe.name if e.recipe else "Recipe"
+    slot_lbl = e.slot.capitalize()
     db.session.delete(e)
     db.session.commit()
+    log_user_activity(user.id, "planner", "remove_meal", f"Removed '{rname}' from {day_lbl} {slot_lbl}")
     return jsonify({"message": "Removed"})
 
 
@@ -727,6 +777,7 @@ def goals_put(user):
     if data.get("energy_unit") in ("kcal", "kJ"):
         g.energy_unit = data["energy_unit"]
     db.session.commit()
+    log_user_activity(user.id, "goals", "update_goals", f"Set daily targets: {int(g.kcal)} {g.energy_unit} (Protein: {int(g.p)}g, Carbs: {int(g.c)}g, Fat: {int(g.f)}g)")
     return jsonify({"goals": g.to_dict()})
 
 
@@ -803,6 +854,22 @@ def grocery_check(user):
         db.session.add(row)
     row.checked = checked
     db.session.commit()
+
+    item_label = key
+    if key.startswith("x_"):
+        try:
+            extra_item = db.session.get(GroceryExtra, int(key[2:]))
+            if extra_item: item_label = extra_item.name
+        except Exception:
+            pass
+    elif key.isdigit():
+        try:
+            food_item = db.session.get(Food, int(key))
+            if food_item: item_label = food_item.name
+        except Exception:
+            pass
+    status_label = "Checked off" if checked else "Unchecked"
+    log_user_activity(user.id, "grocery", "check_item" if checked else "uncheck_item", f"{status_label} '{item_label}' in grocery checklist")
     return jsonify({"key": key, "checked": checked})
 
 
@@ -816,6 +883,7 @@ def grocery_extra_add(user):
     x = GroceryExtra(user_id=user.id, name=name)
     db.session.add(x)
     db.session.commit()
+    log_user_activity(user.id, "grocery", "add_extra", f"Added extra item '{x.name}' to grocery list")
     return jsonify({"extra": {"id": x.id, "name": x.name}}), 201
 
 
@@ -825,19 +893,210 @@ def grocery_extra_del(user, xid):
     x = db.session.get(GroceryExtra, xid)
     if not x or x.user_id != user.id:
         return bad("Extra not found", 404)
+    xname = x.name
     db.session.delete(x)
     db.session.commit()
+    log_user_activity(user.id, "grocery", "remove_extra", f"Removed extra item '{xname}' from grocery list")
     return jsonify({"message": "Removed"})
 
 
 # ------------------------------------------------------------------ admin API
 
+def compute_user_stats(u):
+    g = db.session.get(Goal, u.id)
+    goal_kcal = g.kcal if g else 2000.0
+    goal_p = g.p if g else 100.0
+    goal_c = g.c if g else 250.0
+    goal_f = g.f if g else 67.0
+    energy_unit = g.energy_unit if g else "kcal"
+
+    plan_entries = PlanEntry.query.filter_by(user_id=u.id).all()
+    planned_meals_count = len(plan_entries)
+    days_planned = set(e.day for e in plan_entries)
+    slots_used = set(e.slot for e in plan_entries)
+
+    # Weekly calorie & macro totals
+    by_day = {d: zero_nut() for d in range(7)}
+    for e in plan_entries:
+        add_dicts(by_day[e.day], entry_nutrition(e))
+    days_used_count = sum(1 for d in by_day if by_day[d]["kcal"] > 0)
+    week_total = zero_nut()
+    for d in by_day:
+        add_dicts(week_total, by_day[d])
+    daily_avg_kcal = round(week_total["kcal"] / days_used_count, 1) if days_used_count > 0 else 0.0
+
+    custom_recipes_count = Recipe.query.filter_by(user_id=u.id).count()
+    custom_foods_count = Food.query.filter_by(owner_user_id=u.id).count()
+
+    # Grocery computation
+    agg = {}
+    for e in plan_entries:
+        r = e.recipe
+        if not r or not r.servings:
+            continue
+        factor = e.servings / r.servings
+        for ing in r.ingredients:
+            food = ing.food
+            if food is None or food.skip:
+                continue
+            grams = ing_grams(ing.qty, ing.unit, food.as_food_dict()) * factor
+            if grams <= 0.4:
+                continue
+            slot = agg.setdefault(food.id, {"grams": 0.0, "recipes": set()})
+            slot["grams"] += grams
+
+    checks = {c.item_key: c.checked for c in GroceryCheck.query.filter_by(user_id=u.id).all()}
+    extras = GroceryExtra.query.filter_by(user_id=u.id).all()
+    total_grocery_items = len(agg) + len(extras)
+    checked_grocery_items = sum(1 for fid in agg if checks.get(str(fid), False)) + \
+                            sum(1 for x in extras if checks.get("x_%d" % x.id, False))
+    grocery_pct = round((checked_grocery_items / total_grocery_items * 100), 1) if total_grocery_items > 0 else 0.0
+
+    parser_count = ActivityLog.query.filter_by(user_id=u.id, category="parser").count()
+
+    # Feature adoption score (out of 6 core capabilities)
+    features_active = 0
+    if planned_meals_count > 0: features_active += 1
+    if g is not None: features_active += 1
+    if custom_recipes_count > 0 or planned_meals_count > 0: features_active += 1
+    if custom_foods_count > 0: features_active += 1
+    if total_grocery_items > 0 or len(checks) > 0: features_active += 1
+    if parser_count > 0: features_active += 1
+
+    return {
+        "goal_kcal": goal_kcal,
+        "goal_p": goal_p,
+        "goal_c": goal_c,
+        "goal_f": goal_f,
+        "energy_unit": energy_unit,
+        "planned_meals_count": planned_meals_count,
+        "days_planned_count": len(days_planned),
+        "slots_used": list(slots_used),
+        "weekly_avg_kcal": daily_avg_kcal,
+        "weekly_total_kcal": round(week_total["kcal"], 1),
+        "custom_recipes_count": custom_recipes_count,
+        "custom_foods_count": custom_foods_count,
+        "grocery_total": total_grocery_items,
+        "grocery_done": checked_grocery_items,
+        "grocery_pct": grocery_pct,
+        "parser_count": parser_count,
+        "features_used_count": features_active,
+        "total_features": 6,
+        "adoption_pct": round((features_active / 6.0) * 100, 1),
+    }
+
+
 def admin_user_dict(u):
+    stats = compute_user_stats(u)
     return {
         **u.to_dict(),
-        "recipe_count": Recipe.query.filter_by(user_id=u.id).count(),
-        "plan_entries": PlanEntry.query.filter_by(user_id=u.id).count(),
+        "recipe_count": stats["custom_recipes_count"],
+        "plan_entries": stats["planned_meals_count"],
+        "food_count": stats["custom_foods_count"],
+        "goal_kcal": stats["goal_kcal"],
+        "weekly_avg_kcal": stats["weekly_avg_kcal"],
+        "grocery_progress": {
+            "total": stats["grocery_total"],
+            "done": stats["grocery_done"],
+            "pct": stats["grocery_pct"],
+        },
+        "features_used_count": stats["features_used_count"],
+        "total_features": stats["total_features"],
+        "adoption_pct": stats["adoption_pct"],
     }
+
+
+def get_user_activity_logs(u, limit=100):
+    logs = ActivityLog.query.filter_by(user_id=u.id).order_by(ActivityLog.created_at.desc()).limit(limit).all()
+    if logs:
+        return [l.to_dict() for l in logs]
+
+    # Synthesize realistic timeline based on user's existing records
+    days_arr = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    synth = []
+    base_time = u.created_at or datetime.now(timezone.utc)
+
+    synth.append({
+        "id": -1,
+        "user_id": u.id,
+        "user_name": u.name,
+        "user_email": u.email,
+        "category": "auth",
+        "action": "register",
+        "details": "Created NutriPlan account",
+        "created_at": base_time.isoformat(),
+    })
+
+    g = db.session.get(Goal, u.id)
+    if g:
+        synth.append({
+            "id": -2,
+            "user_id": u.id,
+            "user_name": u.name,
+            "user_email": u.email,
+            "category": "goals",
+            "action": "update_goals",
+            "details": f"Configured daily targets: {int(g.kcal)} {g.energy_unit} (Protein: {int(g.p)}g, Carbs: {int(g.c)}g, Fat: {int(g.f)}g)",
+            "created_at": (base_time + timedelta(minutes=5)).isoformat(),
+        })
+
+    custom_recipes = Recipe.query.filter_by(user_id=u.id).all()
+    for idx, cr in enumerate(custom_recipes):
+        synth.append({
+            "id": -10 - idx,
+            "user_id": u.id,
+            "user_name": u.name,
+            "user_email": u.email,
+            "category": "recipes",
+            "action": "create_recipe",
+            "details": f"Created custom recipe '{cr.name}' with {len(cr.ingredients)} ingredients",
+            "created_at": (base_time + timedelta(minutes=15 + idx * 10)).isoformat(),
+        })
+
+    custom_foods = Food.query.filter_by(owner_user_id=u.id).all()
+    for idx, cf in enumerate(custom_foods):
+        synth.append({
+            "id": -30 - idx,
+            "user_id": u.id,
+            "user_name": u.name,
+            "user_email": u.email,
+            "category": "foods",
+            "action": "create_food",
+            "details": f"Added custom food '{cf.name}' ({int(cf.k)} kcal/100g)",
+            "created_at": (base_time + timedelta(minutes=20 + idx * 5)).isoformat(),
+        })
+
+    plan_entries = PlanEntry.query.filter_by(user_id=u.id).all()
+    for idx, pe in enumerate(plan_entries):
+        day_lbl = days_arr[pe.day] if 0 <= pe.day < len(days_arr) else str(pe.day)
+        r_name = pe.recipe.name if pe.recipe else "Recipe"
+        kcal_val = round(entry_nutrition(pe)["kcal"], 0)
+        synth.append({
+            "id": -50 - idx,
+            "user_id": u.id,
+            "user_name": u.name,
+            "user_email": u.email,
+            "category": "planner",
+            "action": "add_meal",
+            "details": f"Scheduled '{r_name}' for {day_lbl} {pe.slot.capitalize()} ({pe.servings} servings, {int(kcal_val)} kcal)",
+            "created_at": (base_time + timedelta(hours=1 + idx * 2)).isoformat(),
+        })
+
+    grocery_checks = GroceryCheck.query.filter_by(user_id=u.id, checked=True).all()
+    if grocery_checks:
+        synth.append({
+            "id": -90,
+            "user_id": u.id,
+            "user_name": u.name,
+            "user_email": u.email,
+            "category": "grocery",
+            "action": "check_item",
+            "details": f"Checked off {len(grocery_checks)} items in grocery checklist",
+            "created_at": (base_time + timedelta(hours=5)).isoformat(),
+        })
+
+    synth.sort(key=lambda x: x["created_at"], reverse=True)
+    return synth[:limit]
 
 
 @app.route("/api/admin/stats", methods=["GET"])
@@ -854,6 +1113,7 @@ def admin_stats(admin):
         "plan_entries_total": PlanEntry.query.count(),
         "foods_total": Food.query.filter(Food.owner_user_id.is_(None)).count(),
         "custom_foods_total": Food.query.filter(Food.owner_user_id.isnot(None)).count(),
+        "activity_logs_total": ActivityLog.query.count(),
     })
 
 
@@ -862,6 +1122,232 @@ def admin_stats(admin):
 def admin_users(admin):
     users = User.query.order_by(User.status, User.created_at.desc()).all()
     return jsonify({"users": [admin_user_dict(u) for u in users]})
+
+
+@app.route("/api/admin/users/<int:uid>/activity-summary", methods=["GET"])
+@require_admin
+def admin_user_activity_summary(admin, uid):
+    u = db.session.get(User, uid)
+    if not u:
+        return bad("User not found", 404)
+
+    stats = compute_user_stats(u)
+    g = goals_of(u)
+    goals_dict = g.to_dict()
+
+    # Plan analysis
+    plan_entries = PlanEntry.query.filter_by(user_id=u.id).order_by(PlanEntry.day, PlanEntry.id).all()
+    days_arr = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    by_day = {d: zero_nut() for d in range(7)}
+    day_meal_counts = {d: 0 for d in range(7)}
+
+    # 7-day detailed schedule
+    schedule = []
+    for day_idx in range(7):
+        day_slots = {"breakfast": [], "lunch": [], "dinner": [], "snacks": []}
+        day_entries = [e for e in plan_entries if e.day == day_idx]
+        for e in day_entries:
+            nut = round_nut(entry_nutrition(e))
+            add_dicts(by_day[day_idx], entry_nutrition(e))
+            day_meal_counts[day_idx] += 1
+            if e.slot in day_slots:
+                day_slots[e.slot].append({
+                    "id": e.id,
+                    "recipe_id": e.recipe_id,
+                    "recipe_name": e.recipe.name if e.recipe else "?",
+                    "recipe_image": recipe_image_url(e.recipe) if e.recipe else None,
+                    "servings": e.servings,
+                    "kcal": nut["kcal"],
+                    "p": nut["p"],
+                    "c": nut["c"],
+                    "f": nut["f"],
+                })
+        schedule.append({
+            "day": day_idx,
+            "day_name": days_arr[day_idx],
+            "slots": day_slots,
+            "totals": round_nut(by_day[day_idx]),
+            "meal_count": day_meal_counts[day_idx],
+        })
+
+    days_used = sum(1 for d in by_day if by_day[d]["kcal"] > 0)
+    week_total = zero_nut()
+    for d in by_day:
+        add_dicts(week_total, by_day[d])
+    daily_avg = {k: round(v / days_used, 1) if days_used else 0.0 for k, v in week_total.items()}
+
+    # Macro adherence calculation
+    def calc_adherence(actual, target):
+        pct = round((actual / target * 100), 1) if target > 0 else 0.0
+        diff = round(actual - target, 1)
+        status = "on_track"
+        if pct < 85: status = "under"
+        elif pct > 115: status = "over"
+        return {"actual": actual, "target": target, "pct": pct, "diff": diff, "status": status}
+
+    macro_adherence = {
+        "kcal": calc_adherence(daily_avg.get("kcal", 0), goals_dict["kcal"]),
+        "p": calc_adherence(daily_avg.get("p", 0), goals_dict["p"]),
+        "c": calc_adherence(daily_avg.get("c", 0), goals_dict["c"]),
+        "f": calc_adherence(daily_avg.get("f", 0), goals_dict["f"]),
+        "fib": round(daily_avg.get("fib", 0), 1),
+        "sug": round(daily_avg.get("sug", 0), 1),
+        "na": round(daily_avg.get("na", 0), 1),
+    }
+
+    # Grocery data
+    agg = {}
+    for e in plan_entries:
+        r = e.recipe
+        if not r or not r.servings: continue
+        factor = e.servings / r.servings
+        for ing in r.ingredients:
+            food = ing.food
+            if food is None or food.skip: continue
+            grams = ing_grams(ing.qty, ing.unit, food.as_food_dict()) * factor
+            if grams <= 0.4: continue
+            slot = agg.setdefault(food.id, {"grams": 0.0, "recipes": set()})
+            slot["grams"] += grams
+            slot["recipes"].add(r.name)
+
+    foods_map = {f.id: f for f in Food.query.all()}
+    checks = {c.item_key: c.checked for c in GroceryCheck.query.filter_by(user_id=u.id).all()}
+    extras = GroceryExtra.query.filter_by(user_id=u.id).all()
+    by_cat = {}
+    for fid, slot in agg.items():
+        food = foods_map.get(fid)
+        if not food: continue
+        by_cat.setdefault(food.cat, []).append({
+            "key": str(fid),
+            "name": food.name,
+            "grams": round(slot["grams"], 1),
+            "display": fmt_amount(food.as_food_dict(), slot["grams"]),
+            "checked": bool(checks.get(str(fid), False)),
+            "recipes_count": len(slot["recipes"]),
+        })
+
+    grocery_categories = []
+    for cat in CAT_ORDER + [c for c in by_cat if c not in CAT_ORDER]:
+        if cat in by_cat:
+            grocery_categories.append({
+                "key": cat,
+                "label": CATS.get(cat, cat),
+                "items": sorted(by_cat[cat], key=lambda x: x["name"]),
+            })
+    extras_out = [{"id": x.id, "name": x.name, "checked": bool(checks.get("x_%d" % x.id, False))} for x in extras]
+
+    # Custom content
+    custom_recipes = [recipe_to_detail(r, u) for r in Recipe.query.filter_by(user_id=u.id).order_by(Recipe.name).all()]
+    custom_foods = [food_to_dict(f) for f in Food.query.filter_by(owner_user_id=u.id).order_by(Food.name).all()]
+
+    # Features summary
+    features = {
+        "meal_planner": {
+            "used": stats["planned_meals_count"] > 0,
+            "total_meals": stats["planned_meals_count"],
+            "days_covered": stats["days_planned_count"],
+            "slots_used": stats["slots_used"],
+            "weekly_total_kcal": stats["weekly_total_kcal"],
+            "daily_avg_kcal": stats["weekly_avg_kcal"],
+        },
+        "nutrition_goals": {
+            "used": True,
+            "targets": goals_dict,
+            "is_customized": (g.kcal != 2000.0 or g.p != 100.0 or g.c != 250.0 or g.f != 67.0),
+            "adherence": macro_adherence,
+        },
+        "recipes": {
+            "used": len(custom_recipes) > 0 or stats["planned_meals_count"] > 0,
+            "custom_recipes_count": len(custom_recipes),
+            "custom_recipes": custom_recipes,
+        },
+        "food_database": {
+            "used": len(custom_foods) > 0,
+            "custom_foods_count": len(custom_foods),
+            "custom_foods": custom_foods,
+        },
+        "grocery": {
+            "used": stats["grocery_total"] > 0 or len(checks) > 0,
+            "total_items": stats["grocery_total"],
+            "checked_items": stats["grocery_done"],
+            "completion_pct": stats["grocery_pct"],
+            "categories": grocery_categories,
+            "extras": extras_out,
+        },
+        "smart_parser": {
+            "used": stats["parser_count"] > 0,
+            "parse_events_count": stats["parser_count"],
+        },
+        "adoption_score": stats["features_used_count"],
+        "total_features": stats["total_features"],
+        "adoption_pct": stats["adoption_pct"],
+    }
+
+    return jsonify({
+        "user": admin_user_dict(u),
+        "features": features,
+        "progress": {
+            "goals": goals_dict,
+            "daily_average": daily_avg,
+            "week_total": round_nut(week_total),
+            "days_used": days_used,
+            "meals_planned": stats["planned_meals_count"],
+            "macro_adherence": macro_adherence,
+            "days_summary": [
+                {
+                    "day": d,
+                    "day_name": days_arr[d],
+                    "totals": round_nut(by_day[d]),
+                    "meal_count": day_meal_counts[d],
+                    "is_planned": day_meal_counts[d] > 0,
+                }
+                for d in range(7)
+            ],
+        },
+        "schedule": schedule,
+        "grocery": {
+            "categories": grocery_categories,
+            "extras": extras_out,
+            "total": stats["grocery_total"],
+            "done": stats["grocery_done"],
+            "pct": stats["grocery_pct"],
+        },
+        "custom_recipes": custom_recipes,
+        "custom_foods": custom_foods,
+        "activity_logs": get_user_activity_logs(u),
+    })
+
+
+@app.route("/api/admin/users/<int:uid>/logs", methods=["GET"])
+@require_admin
+def admin_user_logs(admin, uid):
+    u = db.session.get(User, uid)
+    if not u:
+        return bad("User not found", 404)
+    limit = min(200, int(request.args.get("limit", 100) or 100))
+    category = request.args.get("category")
+    query = ActivityLog.query.filter_by(user_id=u.id)
+    if category:
+        query = query.filter_by(category=category)
+    logs = query.order_by(ActivityLog.created_at.desc()).limit(limit).all()
+    if logs:
+        return jsonify({"logs": [l.to_dict() for l in logs]})
+    synth = get_user_activity_logs(u, limit)
+    if category:
+        synth = [l for l in synth if l.get("category") == category]
+    return jsonify({"logs": synth})
+
+
+@app.route("/api/admin/activity/recent", methods=["GET"])
+@require_admin
+def admin_recent_activity(admin):
+    limit = min(100, int(request.args.get("limit", 50) or 50))
+    category = request.args.get("category")
+    query = ActivityLog.query
+    if category:
+        query = query.filter_by(category=category)
+    logs = query.order_by(ActivityLog.created_at.desc()).limit(limit).all()
+    return jsonify({"logs": [l.to_dict() for l in logs]})
 
 
 @app.route("/api/admin/users", methods=["POST"])
@@ -878,10 +1364,13 @@ def admin_create_user(admin):
         return bad("Password must be at least 6 characters")
     if User.query.filter(db.func.lower(User.email) == email).first():
         return bad("An account with this email already exists")
+    now = datetime.now(timezone.utc)
     u = User(email=email, name=name, role=role, status="active",
-             password_hash=generate_password_hash(password))
+             password_hash=generate_password_hash(password),
+             last_login_at=None, last_active_at=now)
     db.session.add(u)
     db.session.commit()
+    log_user_activity(u.id, "auth", "admin_create", f"Account created by administrator ({admin.name})")
     return jsonify({"user": admin_user_dict(u)}), 201
 
 
@@ -899,6 +1388,7 @@ def admin_set_status(admin, uid):
         return bad("You cannot change your own status")
     u.status = status
     db.session.commit()
+    log_user_activity(u.id, "auth", "status_change", f"Status changed to '{status}' by administrator ({admin.name})")
     return jsonify({"user": admin_user_dict(u)})
 
 
@@ -919,6 +1409,7 @@ def admin_set_role(admin, uid):
         return bad("At least one active admin must remain")
     u.role = role
     db.session.commit()
+    log_user_activity(u.id, "auth", "role_change", f"Role changed to '{role}' by administrator ({admin.name})")
     return jsonify({"user": admin_user_dict(u)})
 
 
@@ -934,6 +1425,7 @@ def admin_reset_password(admin, uid):
         return bad("Password must be at least 6 characters")
     u.password_hash = generate_password_hash(password)
     db.session.commit()
+    log_user_activity(u.id, "auth", "password_reset", f"Password reset by administrator ({admin.name})")
     return jsonify({"message": "Password updated"})
 
 

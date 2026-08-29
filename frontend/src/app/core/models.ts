@@ -10,8 +10,17 @@ export interface AppUser {
   role: Role;
   status: Status;
   created_at?: string;
+  last_login_at?: string | null;
+  last_active_at?: string | null;
   recipe_count?: number;
   plan_entries?: number;
+  food_count?: number;
+  goal_kcal?: number;
+  weekly_avg_kcal?: number;
+  grocery_progress?: { total: number; done: number; pct: number };
+  features_used_count?: number;
+  total_features?: number;
+  adoption_pct?: number;
 }
 
 export interface Nut { kcal: number; p: number; c: number; f: number; fib: number; sug: number; na: number; }
@@ -85,6 +94,129 @@ export interface ParseRow {
 export interface AdminStats {
   users_total: number; users_pending: number; users_active: number; users_disabled: number;
   recipes_total: number; plan_entries_total: number; foods_total: number; custom_foods_total: number;
+  activity_logs_total?: number;
+}
+
+export interface UserActivityLog {
+  id: number;
+  user_id: number;
+  user_name?: string;
+  user_email?: string;
+  category: 'planner' | 'goals' | 'recipes' | 'foods' | 'grocery' | 'auth' | 'parser' | string;
+  action: string;
+  details: string;
+  created_at: string;
+}
+
+export interface MacroAdherenceItem {
+  actual: number;
+  target: number;
+  pct: number;
+  diff: number;
+  status: 'on_track' | 'under' | 'over';
+}
+
+export interface UserMacroAdherence {
+  kcal: MacroAdherenceItem;
+  p: MacroAdherenceItem;
+  c: MacroAdherenceItem;
+  f: MacroAdherenceItem;
+  fib: number;
+  sug: number;
+  na: number;
+}
+
+export interface UserScheduleSlotItem {
+  id: number;
+  recipe_id: number;
+  recipe_name: string;
+  recipe_image?: string | null;
+  servings: number;
+  kcal: number;
+  p: number;
+  c: number;
+  f: number;
+}
+
+export interface UserScheduleDay {
+  day: number;
+  day_name: string;
+  slots: {
+    breakfast: UserScheduleSlotItem[];
+    lunch: UserScheduleSlotItem[];
+    dinner: UserScheduleSlotItem[];
+    snacks: UserScheduleSlotItem[];
+    [slotKey: string]: UserScheduleSlotItem[];
+  };
+  totals: Nut;
+  meal_count: number;
+}
+
+export interface UserFeaturesBreakdown {
+  meal_planner: {
+    used: boolean;
+    total_meals: number;
+    days_covered: number;
+    slots_used: string[];
+    weekly_total_kcal: number;
+    daily_avg_kcal: number;
+  };
+  nutrition_goals: {
+    used: boolean;
+    targets: Goals;
+    is_customized: boolean;
+    adherence: UserMacroAdherence;
+  };
+  recipes: {
+    used: boolean;
+    custom_recipes_count: number;
+    custom_recipes: RecipeDetail[];
+  };
+  food_database: {
+    used: boolean;
+    custom_foods_count: number;
+    custom_foods: FoodItem[];
+  };
+  grocery: {
+    used: boolean;
+    total_items: number;
+    checked_items: number;
+    completion_pct: number;
+    categories: GroceryCategory[];
+    extras: GroceryExtra[];
+  };
+  smart_parser: {
+    used: boolean;
+    parse_events_count: number;
+  };
+  adoption_score: number;
+  total_features: number;
+  adoption_pct: number;
+}
+
+export interface UserActivitySummary {
+  user: AppUser;
+  features: UserFeaturesBreakdown;
+  progress: {
+    goals: Goals;
+    daily_average: Nut;
+    week_total: Nut;
+    days_used: number;
+    meals_planned: number;
+    macro_adherence: UserMacroAdherence;
+    days_summary: { day: number; day_name: string; totals: Nut; meal_count: number; is_planned: boolean }[];
+  };
+  schedule: UserScheduleDay[];
+  grocery: {
+    categories: GroceryCategory[];
+    extras: GroceryExtra[];
+    total: number;
+    done: number;
+    pct: number;
+  };
+  custom_recipes: RecipeDetail[];
+  custom_foods: FoodItem[];
+  activity_logs: UserActivityLog[];
 }
 
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];

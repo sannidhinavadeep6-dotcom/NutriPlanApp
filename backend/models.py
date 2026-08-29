@@ -20,6 +20,8 @@ class User(db.Model):
     role = db.Column(db.String(20), nullable=False, default="user")       # admin | user
     status = db.Column(db.String(20), nullable=False, default="active")   # active | pending | disabled
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    last_login_at = db.Column(db.DateTime, nullable=True)
+    last_active_at = db.Column(db.DateTime, nullable=True)
 
     plan_entries = db.relationship("PlanEntry", backref="user", cascade="all, delete-orphan")
     recipes = db.relationship("Recipe", backref="user", cascade="all, delete-orphan")
@@ -34,6 +36,8 @@ class User(db.Model):
             "role": self.role,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
+            "last_active_at": self.last_active_at.isoformat() if self.last_active_at else None,
         }
 
 
@@ -135,3 +139,28 @@ class GroceryExtra(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     name = db.Column(db.String(200), nullable=False)
+
+
+class ActivityLog(db.Model):
+    __tablename__ = "activity_logs"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    category = db.Column(db.String(40), nullable=False, default="general", index=True)  # planner, goals, recipes, foods, grocery, auth, parser
+    action = db.Column(db.String(80), nullable=False)
+    details = db.Column(db.String(500), nullable=False, default="")
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
+
+    user = db.relationship("User", backref=db.backref("activity_logs", cascade="all, delete-orphan", order_by="ActivityLog.created_at.desc()"))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "user_name": self.user.name if self.user else None,
+            "user_email": self.user.email if self.user else None,
+            "category": self.category,
+            "action": self.action,
+            "details": self.details,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
