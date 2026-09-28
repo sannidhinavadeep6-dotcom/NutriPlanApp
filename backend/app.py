@@ -15,32 +15,76 @@ from flask import Flask, jsonify, make_response, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from food_data import CATS, CAT_ORDER
-from models import (db, User, Goal, Food, Recipe, Ingredient, PlanEntry,
-                    GroceryCheck, GroceryExtra, ActivityLog)
+import sys
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+for p in [PROJECT_ROOT, os.path.join(PROJECT_ROOT, "database"), BASE_DIR]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+try:
+    from database import (
+        db, User, Goal, Food, Recipe, Ingredient, PlanEntry,
+        GroceryCheck, GroceryExtra, ActivityLog,
+        CATS, CAT_ORDER, FOODS,
+        ensure_foods, ensure_recipes, seed_if_empty,
+        DB_PATH
+    )
+except (ImportError, ValueError):
+    from food_data import CATS, CAT_ORDER, FOODS
+    from models import (db, User, Goal, Food, Recipe, Ingredient, PlanEntry,
+                        GroceryCheck, GroceryExtra, ActivityLog)
+    from seed import ensure_foods, ensure_recipes, seed_if_empty
+    DB_PATH = os.path.join(PROJECT_ROOT, "database", "nutriplan.db")
+
 from nutrition import (UNIT_LABELS, best_match, search_foods, units_for,
                        unit_grams, default_unit_for, default_qty_for,
                        ing_grams, zero_nut, add_nut, round_nut, fmt_amount,
                        food_to_dict)
 from parser import parse_ing_line
-from seed import ensure_foods, ensure_recipes, seed_if_empty
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "nutriplan.db")
+def _load_env_file():
+    """Load key-value pairs from .env file into os.environ if present."""
+    for env_path in [os.path.join(PROJECT_ROOT, ".env"), os.path.join(BASE_DIR, ".env")]:
+        if os.path.isfile(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip().strip("'\"")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
+_load_env_file()
+
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 SECRET_FILE = os.path.join(BASE_DIR, "jwt_secret.key")
 
 SLOTS = ["breakfast", "lunch", "dinner", "snacks"]
-JWT_TTL_HOURS = 24 * 7
+JWT_TTL_HOURS = int(os.environ.get("JWT_TTL_HOURS", 24 * 7))
 
 
 def get_secret():
+    env_secret = os.environ.get("JWT_SECRET") or os.environ.get("SECRET_KEY")
+    if env_secret:
+        return env_secret
     if os.path.exists(SECRET_FILE):
-        with open(SECRET_FILE) as fh:
-            return fh.read().strip()
+        try:
+            with open(SECRET_FILE) as fh:
+                return fh.read().strip()
+        except Exception:
+            pass
     s = secrets.token_hex(32)
-    with open(SECRET_FILE, "w") as fh:
-        fh.write(s)
+    try:
+        with open(SECRET_FILE, "w") as fh:
+            fh.write(s)
+    except Exception:
+        pass
     return s
 
 
@@ -50,9 +94,12 @@ SECRET = get_secret()
 
 def create_app():
     app = Flask(__name__, static_folder=None)
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + DB_PATH
+    db_uri = os.environ.get("DATABASE_URL") or os.environ.get("SQLALCHEMY_DATABASE_URI") or ("sqlite:///" + DB_PATH)
+    if db_uri.startswith("postgres://"):
+        db_uri = db_uri.replace("postgres://", "postgresql://", 1)
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"connect_args": {"check_same_thread": False}}
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"connect_args": {"check_same_thread": False}} if "sqlite" in db_uri else {}
     CORS(app, supports_credentials=True)
     db.init_app(app)
     with app.app_context():

@@ -86,29 +86,27 @@ npm run cap:ios         # Open in Xcode (macOS)
 
 ```
 NutriPlanApp/
-├── backend/                 Python 3 · Flask · SQLAlchemy · SQLite
-│   ├── app.py               REST API + JWT auth + serves the built Angular app
-│   ├── models.py            SQL models: users, goals, foods, recipes, ingredients,
-│   │                        plan_entries, grocery_checks, grocery_extras
-│   ├── nutrition.py         unit conversion, food matching, macro math
-│   ├── parser.py            "1 1/2 cups rice" → structured ingredient
-│   ├── food_data.py         171-food nutrition database (USDA-style reference)
-│   ├── seed.py              first-run seeding (admin, demo user, foods, recipes)
-│   ├── requirements.txt
-│   ├── static/              ← pre-built Angular bundle (served by Flask)
-│   └── nutriplan.db         SQLite database (auto-created on first run)
-└── frontend/                Angular 20 (standalone components, signals, new control flow)
+├── database/                SQLite database, SQLAlchemy models, and seeders
+│   ├── __init__.py          Database package exports & path helpers
+│   ├── models.py            SQL models: User, Goal, Food, Recipe, Ingredient, PlanEntry, etc.
+│   ├── food_data.py         Food nutrition database & categories
+│   ├── seed_recipes.py      Pre-seeded 100+ recipe database
+│   ├── seed.py              Database initialization & seeding logic
+│   └── nutriplan.db         SQLite database file
+│
+├── backend/                 Python 3 · Flask REST API & services
+│   ├── app.py               REST API + JWT auth + serves built frontend
+│   ├── nutrition.py         Unit conversion, food matching & macro calculations
+│   ├── parser.py            NLP ingredient string parser
+│   ├── start.py             Server & tunnel launcher
+│   ├── requirements.txt     Python dependencies
+│   ├── static/              Built frontend distribution files
+│   └── docs/                Research papers & technical documentation
+│
+└── frontend/                Angular 20 / Capacitor Mobile Client
     └── src/app/
-        ├── core/            auth service, JWT interceptor, guards, API client, models
-        └── pages/
-            ├── login/       login + "request access" (registration)
-            ├── shell/       app top bar, role-aware navigation, logout
-            ├── today/       today's calorie & macro analysis vs goals
-            ├── recipes/     recipe builder, paste-parser, portion scaler
-            ├── calendar/    weekly meal planner (breakfast/lunch/dinner/snacks)
-            ├── grocery/     auto-generated, aisle-grouped shopping list
-            ├── goals/       targets, TDEE calculator, custom foods
-            └── admin/       admin portal: approvals, user management, stats
+        ├── core/            Auth service, JWT interceptor, guards, API client, models
+        └── pages/           Login, Shell, Today, Recipes, Calendar, Grocery, Goals, Admin
 ```
 
 ## 🔌 API overview (`/api/…`)
@@ -138,8 +136,6 @@ All app endpoints require a `Authorization: Bearer <JWT>` header; admin endpoint
 
 ## 📝 Notes
 
-- **"Could not open requirements file"?** You're in the wrong folder — it's at `backend/requirements.txt`. Or skip all of that and run `python start.py` from the project root.
-- Nutrition values are estimates from public reference data (USDA averages); not for medical use.
-- SQLite file lives at `backend/nutriplan.db`; delete it to re-seed from scratch.
+- SQLite file lives at `database/nutriplan.db`; delete it to re-seed from scratch.
 - JWT secret auto-generates into `backend/jwt_secret.key` on first run — keep it private and stable across restarts.
 - For production, run behind a real WSGI server (e.g. `gunicorn "app.app"`), use HTTPS, and change default credentials.

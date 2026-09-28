@@ -1,3 +1,23 @@
+# Environment & Secrets (Keep private!)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.pfx
+*.p12
+*.crt
+jwt_secret.key
+backend/jwt_secret.key
+
+# SQLite Databases (auto-seeded on startup, contains local passwords/data)
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+database/*.db
+
 # Python
 __pycache__/
 *.py[cod]
@@ -9,7 +29,6 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-backend/jwt_secret.key
 
 # Node / Angular
 frontend/node_modules/
@@ -31,5 +50,13 @@ frontend/ios/App/build/
 frontend/ios/App/DerivedData/
 
 # Binaries & Tunnels
+*.exe
 cloudflared.exe
+backend/cloudflared.exe
 
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

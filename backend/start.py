@@ -23,7 +23,7 @@ import time
 import webbrowser
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BACKEND = os.path.join(ROOT, "backend")
+BACKEND = ROOT if os.path.exists(os.path.join(ROOT, "app.py")) else os.path.join(ROOT, "backend")
 DEFAULT_PORT = 8000
 
 
@@ -172,7 +172,7 @@ def get_local_ip():
 
 
 def start_public_tunnel(port):
-    cf_path = os.path.join(ROOT, "cloudflared.exe")
+    cf_path = os.path.join(BACKEND, "cloudflared.exe")
     if not os.path.isfile(cf_path):
         return None
     try:

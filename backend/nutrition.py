@@ -1,9 +1,22 @@
 """NutriPlan — nutrition math, unit handling and food matching."""
 
+import os
+import sys
 import math
 import re
 
-from food_data import CATS, CAT_ORDER
+# Ensure database package is accessible
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+for p in [PROJECT_ROOT, os.path.join(PROJECT_ROOT, "database"), BASE_DIR]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+try:
+    from database.food_data import CATS, CAT_ORDER
+except (ImportError, ValueError):
+    from food_data import CATS, CAT_ORDER
+
 from parser import parse_ing_line
 
 UNIT_LABELS = {

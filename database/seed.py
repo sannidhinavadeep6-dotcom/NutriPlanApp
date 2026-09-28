@@ -1,14 +1,21 @@
 """NutriPlan — first-run seeding: admin account, global foods, demo data."""
 
-from food_data import FOODS
-from models import db, User, Goal, Food, Recipe, Ingredient, PlanEntry
-from werkzeug.security import generate_password_hash
-from seed_recipes import RECIPES_100
+try:
+    from .food_data import FOODS
+    from .models import db, User, Goal, Food, Recipe, Ingredient, PlanEntry
+    from .seed_recipes import RECIPES_100
+except (ImportError, ValueError):
+    from food_data import FOODS
+    from models import db, User, Goal, Food, Recipe, Ingredient, PlanEntry
+    from seed_recipes import RECIPES_100
 
-ADMIN_EMAIL = "admin@nutriplan.app"
-ADMIN_PASSWORD = "Admin@123"
-DEMO_EMAIL = "demo@nutriplan.app"
-DEMO_PASSWORD = "Demo@123"
+from werkzeug.security import generate_password_hash
+import os
+
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@nutriplan.app")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@123")
+DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "demo@nutriplan.app")
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "Demo@123")
 
 DEMO_RECIPES = RECIPES_100  # 100 recipes: South Indian focus + North classics
 
