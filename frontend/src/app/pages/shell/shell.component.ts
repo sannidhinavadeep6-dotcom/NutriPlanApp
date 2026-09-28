@@ -3,13 +3,14 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
 import { Api } from '../../core/api.service';
 import { IconComponent } from '../../core/icon.component';
+import { AboutModalComponent } from '../../core/about-modal.component';
 import { AdminStats } from '../../core/models';
 
 interface NavItem { path: string; icon: string; label: string; short: string; }
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent, AboutModalComponent],
   template: `
     <header class="topbar">
       <div class="brand">
@@ -30,15 +31,27 @@ interface NavItem { path: string; icon: string; label: string; short: string; }
         }
       </nav>
 
-      <div class="user-chip">
-        <div class="who">
-          <b>{{ auth.user()?.name }}</b>
-          <small>{{ auth.user()?.role === 'admin' ? 'Administrator' : 'Member' }}</small>
-        </div>
-        <div class="avatar">{{ initials() }}</div>
-        <button class="icon-btn" (click)="auth.logout()" title="Sign out">
-          <app-icon name="logout" [size]="18"/>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button 
+          type="button" 
+          class="btn ghost" 
+          style="padding: 6px 12px; font-size: 13px; font-weight: 650; gap: 5px; border-radius: 10px; color: #0c7a43; background: #eef8f2;"
+          (click)="showAbout = true"
+          title="About NutriPlan & Developer">
+          <app-icon name="info" [size]="15"/>
+          <span class="desktop-only">About</span>
         </button>
+
+        <div class="user-chip">
+          <div class="who">
+            <b>{{ auth.user()?.name }}</b>
+            <small>{{ auth.user()?.role === 'admin' ? 'Administrator' : 'Member' }}</small>
+          </div>
+          <div class="avatar">{{ initials() }}</div>
+          <button class="icon-btn" (click)="auth.logout()" title="Sign out">
+            <app-icon name="logout" [size]="18"/>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -46,8 +59,12 @@ interface NavItem { path: string; icon: string; label: string; short: string; }
       <router-outlet />
     </main>
 
-    <footer class="foot">
-      NutriPlan · Angular + Flask + SQLite · nutrition estimates from public reference data (USDA averages)
+    <footer class="foot" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+      <span>NutriPlan · Angular + Flask + SQLite · USDA reference data</span>
+      <span>·</span>
+      <button type="button" class="link-btn" style="background: none; border: none; color: #0c7a43; font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; font-size: inherit;" (click)="showAbout = true">
+        About NutriPlan &amp; Creator (S. Navadeep)
+      </button>
     </footer>
 
     <nav class="bottom-nav">
@@ -58,11 +75,21 @@ interface NavItem { path: string; icon: string; label: string; short: string; }
           @if (item.path === '/admin' && pending > 0) { <span class="badge-red">{{ pending }}</span> }
         </a>
       }
+      <a href="javascript:void(0)" (click)="showAbout = true">
+        <span class="bn-icon"><app-icon name="info" [size]="19"/></span>
+        About
+      </a>
     </nav>
+
+    <!-- About Modal -->
+    @if (showAbout) {
+      <app-about-modal (close)="showAbout = false" />
+    }
   `,
 })
 export class ShellComponent implements OnInit {
   pending = 0;
+  showAbout = false;
   nav: NavItem[] = [
     { path: '/today', icon: 'chart', label: 'Today', short: 'Today' },
     { path: '/recipes', icon: 'book', label: 'Recipes', short: 'Recipes' },
@@ -89,3 +116,4 @@ export class ShellComponent implements OnInit {
     return name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
   }
 }
+

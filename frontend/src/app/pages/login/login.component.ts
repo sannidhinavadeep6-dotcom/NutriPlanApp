@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { IconComponent } from '../../core/icon.component';
+import { AboutModalComponent } from '../../core/about-modal.component';
 import { Router } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
 import { Api } from '../../core/api.service';
@@ -15,7 +16,7 @@ interface Slide {
 
 @Component({
   selector: 'app-login',
-  imports: [FormsModule, IconComponent],
+  imports: [FormsModule, IconComponent, AboutModalComponent],
   template: `
 <div class="login-page-wrap">
   <div class="blob b1"></div>
@@ -207,9 +208,15 @@ interface Slide {
         </form>
       }
 
-      <!-- Mobile Server Connection Indicator / Switcher -->
-      <div style="margin-top: 14px; text-align: center;">
-        <button type="button" class="icon-btn" style="font-size: 11.5px; font-weight: 600; color: var(--muted); gap: 5px; align-items: center; border-radius: 999px; padding: 4px 10px; background: #f0f4ee;" (click)="showServerModal = true">
+      <!-- Action Buttons (About App & Mobile Connection) -->
+      <div style="margin-top: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+        <button type="button" class="icon-btn" style="font-size: 11.5px; font-weight: 650; color: #0c7a43; gap: 5px; align-items: center; border-radius: 999px; padding: 5px 12px; background: #e3f6ea; border: 1px solid #c7ebd2; cursor: pointer;" (click)="showAboutModal = true">
+          <app-icon name="info" [size]="13"/>
+          <span>About NutriPlan &amp; Creator</span>
+          <app-icon name="sparkles" [size]="12"/>
+        </button>
+
+        <button type="button" class="icon-btn" style="font-size: 11.5px; font-weight: 600; color: var(--muted); gap: 5px; align-items: center; border-radius: 999px; padding: 5px 12px; background: #f0f4ee; border: 1px solid #e0e8dc; cursor: pointer;" (click)="showServerModal = true">
           <app-icon name="server" [size]="13"/>
           <span>Server: {{ api.serverUrl() || 'Relative (/api)' }}</span>
           <app-icon name="settings" [size]="12"/>
@@ -217,6 +224,11 @@ interface Slide {
       </div>
     </div>
   </div>
+
+  <!-- About NutriPlan & Developer Modal -->
+  @if (showAboutModal) {
+    <app-about-modal (close)="showAboutModal = false" />
+  }
 
   <!-- Server Connection Settings Modal -->
   @if (showServerModal) {
@@ -285,6 +297,7 @@ export class LoginComponent implements OnInit, OnDestroy {
   okMsg = '';
   busy = false;
 
+  showAboutModal = false;
   showServerModal = false;
   tempServerUrl = '';
   testingServer = false;
