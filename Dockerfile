@@ -12,10 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
-# Copy application source code
+# Copy backend (includes pre-built frontend in backend/static) and database package
 COPY backend ./backend
 COPY database ./database
-COPY frontend/dist ./frontend/dist
 
 EXPOSE 8000
 ENV PORT=8000
