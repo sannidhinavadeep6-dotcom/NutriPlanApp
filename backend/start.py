@@ -151,7 +151,12 @@ def free_port(port):
 
 
 def pick_port():
-    """Free the default port; otherwise fall back to the next free one."""
+    """Use PORT from environment (e.g. Render/Heroku), or free the default port."""
+    if "PORT" in os.environ:
+        try:
+            return int(os.environ["PORT"])
+        except ValueError:
+            pass
     if free_port(DEFAULT_PORT):
         return DEFAULT_PORT
     for candidate in range(DEFAULT_PORT + 1, DEFAULT_PORT + 10):
