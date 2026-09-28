@@ -1,4 +1,4 @@
-# Production 24/7 Dockerfile for NutriPlan (Backend-only Context)
+# Production Dockerfile for NutriPlan (Backend context)
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -16,4 +16,4 @@ EXPOSE 8000
 ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "-c", "import os, sys; sys.path.insert(0, os.getcwd()); from app import app; from waitress import serve; port = int(os.environ.get('PORT', 8000)); print(f'NutriPlan 24/7 running on port {port}'); serve(app, host='0.0.0.0', port=port, threads=8)"]
+CMD ["python", "start.py", "--no-browser"]
